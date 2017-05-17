@@ -1,0 +1,243 @@
+---
+title: "Scientific Programming Workshop - MERS"
+author: "Jenn Cyr"
+date: "5/17/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Scientific Programming MERS Exercise
+We opened a new file (File-> new folder -> MERS), set as working directory using blue settings wheel "More".
+In this folder, added the cases.csv file by pressing upload -> adding csv file. 
+Now we need to load the data in, e.g. create a dataframe:
+```{r}
+cases <- read.csv("cases.csv")
+```
+
+Issue this command, and you will see the data appear in the Environment.
+Note that with read.csv, mostly everything will be listed as a "factor" instead of a number or character, etc.This is usually because there were characters like n/a or ? in the numerical data sets
+to convert from factor to something else, e.g. numerics:
+```{r}
+class(cases$onset)
+```
+where you write dataframe$columnname.
+For this, it will tell us "factor".
+```{r}
+head(cases)
+```
+This will show you the first few rows of each column of data.
+
+#START OF VISUALIZATION EXERCISE
+Graphing in ggplot notes:
+uses a graphing template with systematic addition to map different layers on top of each other
+e.g. "ggplot(data=<DATA>)+ <GEOM_FUNCTION>) + (mapping = aes(<MAPPINGS>))
+where data = your data set, geom = what kind of plot it is, aes = aesthetics
+ggplot has 30-40 different geoms 
+
+
+Remember how the onset column was specified as a factor? We need to fix this.
+```{r}
+class(cases$onset)
+```
+ you get [1] "factor"
+These dates can be reformatted using the lubridate package. Here we create new variables using the Date
+class. But, first we correct a few errors:
+```{r errors}
+cases$hospitalized[890] <- c('2015-02-20')
+data <- cases[-471,]
+library(lubridate)
+data$onset2 <- ymd(data$onset)
+data$hospitalized2 <- ymd(data$hospitalized)
+class(data$onset2)
+```
+ we now get [1] "Date"
+We may also find it useful to have a simple numerical value for the days elapsed since the start of the epidemic.
+We use the following code to search for the earliest onset date.
+```{r}
+day0 <- min(na.omit(data$onset2))
+```
+See it pop up in the values portion of the Environment
+
+Now we can create a new, numeric value for the “epidemic day” for each case.
+```{r}
+data$epi.day <- as.numeric(data$onset2 - day0)
+```
+Next, we load ggplot2.
+```{r}
+library(ggplot2)
+```
+We can explore some of the MERS data using the function ggplot. One plot we might wish to produce
+is the epidemic curve which is basically a bar plot. An empty plot can be produced using the command
+ggplot(data=mers). The epidemic curve is then produced by adding a bar plot using the geom function
+geom_bar. The last line of our code adds some labels:
+```{r , echo=FALSE}
+ggplot(data=data) +
+  geom_bar(mapping=aes(x=epi.day)) +
+  labs(x='Epidemic day', y='Case count', title='Global count of MERS cases by date of symptom onset', caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+we see the plot appear in the plots tab of the lower left area of R studio
+
+Of course, all these cases are distributed among a number of different countries. We can modify the plot to
+show this using the using the aesthetic fill.
+```{r fill, echo=FALSE}
+ggplot(data=data) +
+  geom_bar(mapping=aes(x=epi.day, fill=country)) +
+  labs(x='Epidemic day', y='Case count', title='Global count of MERS cases by date of symptom onset',
+       caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+Exercise. Modify the epidemic curve using the argument position=fill. What does this plots show?
+```{r epicurve, echo=FALSE}
+ggplot(data=data) +
+  geom_bar(position="fill",mapping=aes(x=epi.day, fill=country)) +
+  labs(x='Epidemic day', y='Case count', title='Global count of MERS cases by date of symptom onset',
+       caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+
+Exercise. Another way to modify a bar plot is to change the coordinates. This can be done
+by “adding” coord_flip() and coord_polar() to the plot. Modify the epidemic curve using the
+argument position=fill. What does this plot show?
+```{r bar, echo=FALSE}
+ggplot(data=data) +
+  geom_bar(position="fill",mapping=aes(x=epi.day, fill=country)) + coord_flip() + coord_polar()+
+  labs(x='Epidemic day', y='Case count', title='Global count of MERS cases by date of symptom onset',
+       caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+
+#Univariate plots
+Of course, there are lots of plot types other than bar plots. A quick reference for some of the more common
+2015/03/ggplot2-cheatsheet.pdf. To explore some of these plot types, we will first construct a continuous
+quantity that is often of interest, the infectious period. From the standpoint of disease transmission, the
+infectious period is best defined as the duration of infectiousness for a patient. From an epidemiological point
+of view, this may often be approximated as the time between the onset of symptoms and the time of death,
+hospitalization, or isolation. Here we caculate the infectious period and plot a histogram:
+
+```{r}
+data$infectious.period <- data$hospitalized2-data$onset2
+```
+
+calculate "raw" infectious period
+```{r}
+class(data$infectious.period) 
+```
+these data are class "difftime"
+you get  [1] "difftime"
+```{r}
+data$infectious.period <- as.numeric(data$infectious.period, units = "days") 
+```
+convert to days
+```{r days, echo=FALSE}
+ggplot(data=data) +
+  geom_histogram(aes(x=infectious.period)) +
+  labs(x='Infectious period', y='Frequency', title='Distribution of calculated MERS infectious period',
+       caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+
+In the case of MERS, this epidemiological definition of infectious period is misleading, because in some cases
+the main source of transmission has been nosocomial (infections in a health care setting). This appears in
+our data as a negative time interval between onset and hospitalization. Perhaps we would wish to calculate a
+new value, which is the calculated infectious period in the case where it is positive and zero otherwise. To do
+this, we rely on the handy function ifelse:
+
+```{r ifelse, echo=FALSE}
+data$infectious.period2 <- ifelse(data$infectious.period<0,0,data$infectious.period)
+ggplot(data=data) +
+  geom_histogram(aes(x=infectious.period2)) +
+  labs(x='Infectious period', y='Frequency',
+       title='Distribution of calculated MERS infectious period (positive values only)', caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+Exercise. Investigate the frequency of hospital-acquired infections of MERS.
+There are lots of different plot types that one can use to inspect continuously valued or integer-valued data
+like these. For instance, the density plot:
+
+```{r density, echo=FALSE}
+ggplot(data=data) +
+  geom_density(mapping=aes(x=infectious.period2)) +
+  labs(x='Infectious period', y='Frequency',
+       title='Probability density for MERS infectious period (positive values only)', caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+Or the area plot
+
+```{r area, echo=FALSE}
+ggplot(data=data) +
+  geom_area(stat='bin', mapping=aes(x=infectious.period2)) +
+  labs(x='Infectious period', y='Frequency',
+       title='Area plot for MERS infectious period (positive values only)', caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+
+Exercise. Use the infectious period data calculated in mers$infectious.period2 to experiment
+with other univariate plot types like geom_dotplot and geom_bar.
+
+```{r mers, echo=FALSE}
+ggplot(data=data) +
+  geom_dotplot(stat='bin', mapping=aes(x=infectious.period2)) +
+  labs(x='Infectious period', y='Frequency',
+       title='Area plot for MERS infectious period (positive values only)', caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+```{r pos, echo=FALSE}
+ggplot(data=data) +
+  geom_bar(stat='bin', mapping=aes(x=infectious.period2)) +
+  labs(x='Infectious period', y='Frequency',
+       title='Area plot for MERS infectious period (positive values only)', caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+
+Faceting
+Ordinary plots are great when we want to compare two variables. Furthermore, we can study three or more
+variables by varying other features of the aesthetics (i.e., color). But, as we saw in the last exercise, when we begin adding information to our plot it can quickly get cluttered. There are numerous ways to add information from additional variables, for instance 3-d plots and contour plots. Another way is to createmulti-panel plots. In ggplot2, this is called faceting. Faceting allows one to look at subsets of a data set simultaneously. In ggplot, this is accomplished using the functions facet_wrap() and facet_grid. The behavior of these functions is shown below. Notice how the second example uses subset to exclude countries that didn’t report many cases and unusual codings for gender (e.g. ?M).
+
+```{r gender, echo=FALSE}
+ggplot(data=data, mapping=aes(x=epi.day, y=infectious.period2)) +
+  geom_point(mapping = aes(color=country)) +
+  facet_wrap(~ country) +
+  scale_y_continuous(limits = c(0, 50)) +
+  labs(x='Epidemic day', y='Infectious period',
+       title='MERS infectious period (positive values only) over time', caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+```{r countries, echo=FALSE}
+ggplot(data=subset(data, gender %in% c('M', 'F') & country %in% c('KSA', 'Oman', 'Iran', 'Jordan', 'Qatar', 'South Korea','UAE')), mapping=aes(x=epi.day, y=infectious.period2)) +
+  geom_point(mapping = aes(color=country)) +
+facet_grid(gender ~ country) +
+  scale_y_continuous(limits = c(0, 50)) +
+  labs(x='Epidemic day', y='Infectious period',
+       title='MERS infectious period by gender and country', caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+Exercise. Study variation in the case fatality rate (the fraction of cases that end in death)over time and across countries.
+First we need to plot the outcomes of disease:
+```{r outcomes, echo=FALSE}
+ggplot(data=data) +
+  geom_dotplot(mapping=aes(x=outcome)) +
+  labs(x='Outcome', y='Case count', title='MERS Case Outcomes', caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+#We see there are7 different outcomes because there are typos/ errors in the table (e.g. ? etc.)
+data$outcomes2<-0
+data$outcomes2[grep("fatal", data$outcome)]<-1
+ggplot(data=data) +
+  geom_dotplot(mapping=aes(x=outcomes2)) +
+  labs(x='Outcome', y='Case count', title='MERS Case Outcomes', caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+ggplot(data=data) +
+  geom_bar(mapping=aes(x=outcomes2, fill=country)) +
+  labs(x='Outcome', y='Case count', title='Global count of MERS cases by date of symptom onset',
+       caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+This looks at the outcome by country but there is no time component.
+```{r notime, echo=FALSE}
+ggplot(data=data, mapping=aes(x=outcomes2, y=infectious.period2)) +
+  geom_point(mapping = aes(color=country)) +
+  facet_wrap(~ country) +
+  scale_y_continuous(limits = c(0, 50)) +
+  labs(x='Outcome', y='Infectious period',
+       title='MERS infectious period (positive values only) vs Outcome', caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+```
+This shows how infectious period relates to outcome for the countries.
+
+You can use the package plotly to create more varied or interactive graphs, e.g.:
+```{r plotly, echo=FALSE}
+library(plotly)
+epi.curve <- ggplot(data=data) +
+  geom_bar(mapping=aes(x=epi.day)) +
+  labs(x='Epidemic day', y='Case count', title='Global count of MERS cases by date of symptom onset',
+       caption="Data from: https://github.com/rambaut/MERS-Cases/blob/gh-pages/data/cases.csv")
+ggplotly(epi.curve)
+```
+
